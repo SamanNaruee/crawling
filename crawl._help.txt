@@ -1,0 +1,106 @@
+I'll help you create a spider to crawl and save the Divar data into a Django model. Let's break this down into steps:
+
+First, let's create a model in the dj_divar app:
+from django.db import models
+
+class DivarPost(models.Model):
+    title = models.CharField(max_length=255)
+    token = models.CharField(max_length=50, unique=True)
+    price = models.CharField(max_length=100)
+    district = models.CharField(max_length=100)
+    city = models.CharField(max_length=100)
+    description = models.TextField()
+    image_url = models.URLField()
+    image_count = models.IntegerField()
+    raw_data = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return self.title
+
+Copy
+
+Apply
+
+models.py
+Create a Scrapy spider for Divar:
+from django.core.management.base import BaseCommand
+import scrapy
+from scrapy.crawler import CrawlerProcess
+from dj_divar.models import DivarPost
+import json
+
+class DivarSpider(scrapy.Spider):
+    name = 'divar'
+    allowed_domains = ['divar.ir']
+    start_urls = ['https://api.divar.ir/v8/web-search/1/apartment-sell']
+    
+    def parse(self, response):
+        data = json.loads(response.body)
+        posts = data.get('widget_list', [])
+        
+        for post in posts:
+            if post['widget_type'] == 'POST_ROW':
+                post_data = post['data']
+                web_info = post_data['action']['payload'].get('web_info', {})
+                
+                DivarPost.objects.get_or_create(
+                    token=post_data['token'],
+                    defaults={
+                        'title': web_info.get('title', ''),
+                        'price': post_data.get('middle_description_text', ''),
+                        'district': web_info.get('district_persian', ''),
+                        'city': web_info.get('city_persian', ''),
+                        'description': post_data.get('bottom_description_text', ''),
+                        'image_url': post_data.get('image_url', ''),
+                        'image_count': post_data.get('image_count', 0),
+                        'raw_data': post
+                    }
+                )
+
+class Command(BaseCommand):
+    help = 'Crawl Divar listings'
+
+    def handle(self, *args, **options):
+        process = CrawlerProcess(settings={
+            'USER_AGENT': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'ROBOTSTXT_OBEY': False,
+            'CONCURRENT_REQUESTS': 1,
+        })
+        
+        process.crawl(DivarSpider)
+        process.start()
+
+Copy
+
+Apply
+
+divar_spider.py
+Run migrations:
+python manage.py makemigrations
+
+Copy
+
+Execute
+
+python manage.py migrate
+
+Copy
+
+Execute
+
+Run the spider:
+python manage.py divar_spider
+
+Copy
+
+Execute
+
+This implementation:
+
+Creates a DivarPost model to store all listing data
+Uses JSONField to store the complete raw data
+Implements a Django management command to run the spider
+Handles duplicate entries using get_or_create
+Extracts key information into separate fields while preserving the full data
+The spider will crawl Divar's API endpoint and save all apartment listings to your SQLite database. You can access the data through the Django admin interface or via the DivarPost model in your code.
